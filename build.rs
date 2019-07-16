@@ -7,7 +7,8 @@ fn main() {
 
     cc::Build::new()
         .file("src/stack.ll")
-        .flag("-x").flag("ir")
+        .flag("-x")
+        .flag("ir")
         .flag("-Wno-override-module")
         .compile("stack");
 }
