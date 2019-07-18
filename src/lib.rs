@@ -51,7 +51,7 @@ pub struct Cancelled(());
 impl<'a, Y, R> Coroutine<'a, Y, R> {
     pub fn new<F>(stack: &'a mut [u8], func: F) -> Self
     where
-        F: FnOnce(Control<Y, R>) -> R,
+        F: FnOnce(Control<Y, R>) -> Result<R, Cancelled>,
     {
         let mut ctx: Option<&mut Context<Y, R>> = None;
         let mut fnc: Option<&mut F> = None;
@@ -75,7 +75,7 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
             f: *mut c_void,
         ) -> !
         where
-            F: FnOnce(Control<Y, R>) -> R,
+            F: FnOnce(Control<Y, R>) -> Result<R, Cancelled>,
         {
             unsafe {
                 let mut ctx = MaybeUninit::uninit().assume_init();
@@ -85,8 +85,12 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
                 *(f as *mut &mut F) = &mut fnc;
                 jump_swap(ctx.child.as_mut_ptr(), p);
 
-                let r = fnc(Control(&mut ctx));
-                *ctx.arg = GeneratorState::Complete(r);
+                if let Ok(r) = fnc(Control(&mut ctx)) {
+                    if !ctx.arg.is_null() {
+                        *ctx.arg = GeneratorState::Complete(r);
+                    }
+                }
+
                 jump_into(ctx.parent.as_mut_ptr());
             }
         }
