@@ -10,7 +10,7 @@ fn main() {
         .flag("-x")
         .flag("ir")
         .flag("-Wno-override-module")
-        .compile("stack");
+        .compile("jump");
 
     if probe("#![feature(generator_trait)] fn main() {}") {
         println!("cargo:rustc-cfg=has_generator_trait");
