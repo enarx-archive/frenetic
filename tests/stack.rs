@@ -1,3 +1,5 @@
+#![cfg_attr(has_generator_trait, feature(generator_trait))]
+
 use frenetic::{Coroutine, Generator, GeneratorState};
 use std::pin::Pin;
 
