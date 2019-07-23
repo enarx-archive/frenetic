@@ -87,7 +87,7 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
                 let mut ctx = MaybeUninit::uninit().assume_init();
                 let mut fnc = MaybeUninit::uninit().assume_init();
 
-                *(c as *mut &mut Context<Y, R>) = &mut ctx;
+                *(c as *mut Option<&mut Context<Y, R>>) = Some(&mut ctx);
                 *(f as *mut &mut F) = &mut fnc;
                 jump_swap(ctx.child.as_mut_ptr(), p);
 
