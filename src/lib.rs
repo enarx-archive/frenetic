@@ -49,6 +49,28 @@ pub struct Canceled(());
 
 pub struct Coroutine<'a, Y, R>(Option<&'a mut Context<Y, R>>);
 
+unsafe extern "C" fn callback<Y, R, F>(
+    p: *mut *mut c_void,
+    c: *mut c_void,
+    f: *mut c_void,
+) -> !
+where
+    F: FnOnce(Control<Y, R>) -> Result<Finished<R>, Canceled>,
+{
+    let mut ctx = MaybeUninit::uninit().assume_init();
+    let mut fnc = MaybeUninit::uninit().assume_init();
+
+    *(c as *mut Option<&mut Context<Y, R>>) = Some(&mut ctx);
+    *(f as *mut &mut F) = &mut fnc;
+    jump_swap(ctx.child.as_mut_ptr(), p);
+
+    if let Ok(r) = fnc(Control(&mut ctx)) {
+        *ctx.arg = GeneratorState::Complete(r.0);
+    }
+
+    jump_into(ctx.parent.as_mut_ptr());
+}
+
 impl<'a, Y, R> Coroutine<'a, Y, R> {
     pub fn new<F>(stack: &'a mut [u8], func: F) -> Self
     where
@@ -73,30 +95,6 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
             *fnc.unwrap() = func;
 
             return Coroutine(ctx);
-        }
-
-        extern "C" fn callback<Y, R, F>(
-            p: *mut *mut c_void,
-            c: *mut c_void,
-            f: *mut c_void,
-        ) -> !
-        where
-            F: FnOnce(Control<Y, R>) -> Result<Finished<R>, Canceled>,
-        {
-            unsafe {
-                let mut ctx = MaybeUninit::uninit().assume_init();
-                let mut fnc = MaybeUninit::uninit().assume_init();
-
-                *(c as *mut Option<&mut Context<Y, R>>) = Some(&mut ctx);
-                *(f as *mut &mut F) = &mut fnc;
-                jump_swap(ctx.child.as_mut_ptr(), p);
-
-                if let Ok(r) = fnc(Control(&mut ctx)) {
-                    *ctx.arg = GeneratorState::Complete(r.0);
-                }
-
-                jump_into(ctx.parent.as_mut_ptr());
-            }
         }
     }
 }
