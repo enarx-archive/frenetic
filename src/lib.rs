@@ -5,6 +5,8 @@ use core::mem::MaybeUninit;
 use core::pin::Pin;
 use core::ptr::null_mut;
 
+const STACK_ALIGNMENT: usize = 16;
+
 extern "C" {
     fn jump_into(into: *mut *mut c_void) -> !;
     fn jump_swap(from: *mut *mut c_void, into: *mut *mut c_void);
@@ -76,9 +78,7 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
     where
         F: FnOnce(Control<Y, R>) -> Result<Finished<R>, Canceled>,
     {
-        const STACK_ALIGNMENT: usize = 16;
-
-        let mut ctx: Option<&mut Context<Y, R>> = None;
+        let mut cor = Coroutine(None);
         let mut fnc: Option<&mut F> = None;
 
         unsafe {
@@ -87,15 +87,14 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
 
             jump_init(
                 top,
-                &mut ctx as *mut _ as _,
+                &mut cor.0 as *mut _ as _,
                 &mut fnc as *mut _ as _,
                 callback::<Y, R, F>,
             );
-
-            *fnc.unwrap() = func;
-
-            return Coroutine(ctx);
         }
+
+        *fnc.unwrap() = func;
+        cor
     }
 }
 
