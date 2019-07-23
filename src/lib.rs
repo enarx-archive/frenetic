@@ -47,7 +47,7 @@ pub enum GeneratorState<Y, R> {
 pub struct Finished<R>(R);
 pub struct Canceled(());
 
-pub struct Coroutine<'a, Y, R>(Option<&'a mut Context<Y, R>>, &'a mut [u8]);
+pub struct Coroutine<'a, Y, R>(Option<&'a mut Context<Y, R>>);
 
 impl<'a, Y, R> Coroutine<'a, Y, R> {
     pub fn new<F>(stack: &'a mut [u8], func: F) -> Self
@@ -72,7 +72,7 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
 
             *fnc.unwrap() = func;
 
-            return Coroutine(ctx, stack);
+            return Coroutine(ctx);
         }
 
         extern "C" fn callback<Y, R, F>(
