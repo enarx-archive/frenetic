@@ -6,6 +6,7 @@ use core::pin::Pin;
 use core::ptr::null_mut;
 
 const STACK_ALIGNMENT: usize = 16;
+const STACK_MINIMUM: usize = 4096;
 
 extern "C" {
     fn jump_into(into: *mut *mut c_void) -> !;
@@ -80,6 +81,8 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
     {
         let mut cor = Coroutine(None);
         let mut fnc: Option<&mut F> = None;
+
+        assert!(stack.len() >= STACK_MINIMUM);
 
         unsafe {
             let top = stack.as_mut_ptr().add(stack.len());
