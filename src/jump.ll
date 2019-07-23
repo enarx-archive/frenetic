@@ -6,7 +6,7 @@ declare i8* @llvm.stacksave()
 
 define private i32
 @jump_save(i8** nonnull %ctx)
-alwaysinline nounwind
+alwaysinline nounwind naked
 {
   ; Store the frame address.
   %frame = call i8* @llvm.frameaddress(i32 0)
