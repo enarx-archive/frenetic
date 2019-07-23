@@ -44,14 +44,15 @@ pub enum GeneratorState<Y, R> {
     Complete(R),
 }
 
+pub struct Finished<R>(R);
+pub struct Canceled(());
+
 pub struct Coroutine<'a, Y, R>(Option<&'a mut Context<Y, R>>, &'a mut [u8]);
-pub struct Control<'a, Y, R>(&'a mut Context<Y, R>);
-pub struct Cancelled(());
 
 impl<'a, Y, R> Coroutine<'a, Y, R> {
     pub fn new<F>(stack: &'a mut [u8], func: F) -> Self
     where
-        F: FnOnce(Control<Y, R>) -> Result<R, Cancelled>,
+        F: FnOnce(Control<Y, R>) -> Result<Finished<R>, Canceled>,
     {
         const STACK_ALIGNMENT: usize = 16;
 
@@ -80,7 +81,7 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
             f: *mut c_void,
         ) -> !
         where
-            F: FnOnce(Control<Y, R>) -> Result<R, Cancelled>,
+            F: FnOnce(Control<Y, R>) -> Result<Finished<R>, Canceled>,
         {
             unsafe {
                 let mut ctx = MaybeUninit::uninit().assume_init();
@@ -91,9 +92,7 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
                 jump_swap(ctx.child.as_mut_ptr(), p);
 
                 if let Ok(r) = fnc(Control(&mut ctx)) {
-                    if !ctx.arg.is_null() {
-                        *ctx.arg = GeneratorState::Complete(r);
-                    }
+                    *ctx.arg = GeneratorState::Complete(r.0);
                 }
 
                 jump_into(ctx.parent.as_mut_ptr());
@@ -102,19 +101,25 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
     }
 }
 
+pub struct Control<'a, Y, R>(&'a mut Context<Y, R>);
+
 impl<'a, Y, R> Control<'a, Y, R> {
-    pub fn pause(self, arg: Y) -> Result<Self, Cancelled> {
+    pub fn halt(self, arg: Y) -> Result<Self, Canceled> {
         unsafe {
             *self.0.arg = GeneratorState::Yielded(arg);
 
             jump_swap(self.0.child.as_mut_ptr(), self.0.parent.as_mut_ptr());
 
             if self.0.arg.is_null() {
-                return Err(Cancelled(()));
+                return Err(Canceled(()));
             }
         }
 
         Ok(self)
+    }
+
+    pub fn done<E>(self, arg: R) -> Result<Finished<R>, E> {
+        Ok(Finished(arg))
     }
 }
 
@@ -161,8 +166,8 @@ mod tests {
         let mut stack = [0u8; 4096 * 8];
 
         let mut coro = Coroutine::new(&mut stack, |c| {
-            c.pause(1)?;
-            Ok("foo")
+            let c = c.halt(1)?;
+            c.done("foo")
         });
 
         match Pin::new(&mut coro).resume() {
@@ -181,8 +186,8 @@ mod tests {
         let mut stack = Box::new([0u8; 4096 * 8]);
 
         let mut coro = Coroutine::new(&mut *stack, |c| {
-            c.pause(1)?;
-            Ok("foo")
+            let c = c.halt(1)?;
+            c.done("foo")
         });
 
         match Pin::new(&mut coro).resume() {
@@ -204,12 +209,13 @@ mod tests {
             let mut stack = [0u8; 4096 * 8];
 
             let mut coro = Coroutine::new(&mut stack, |c| {
-                if let Err(v) = c.pause(1) {
-                    cancelled = true;
-                    return Err(v);
+                match c.halt(1) {
+                    Ok(c) => c.done("foo"),
+                    Err(v) => {
+                        cancelled = true;
+                        Err(v)
+                    },
                 }
-
-                Ok("foo")
             });
 
             match Pin::new(&mut coro).resume() {
@@ -221,23 +227,5 @@ mod tests {
         }
 
         assert!(cancelled);
-    }
-
-    #[test]
-    fn invalid() {
-        let mut stack = [0u8; 4096 * 8];
-
-        let mut coro = Coroutine::new(&mut stack, |c| {
-            if let Err(_) = c.pause(1) {} // Swallow the cancellation error.
-            Ok("foo") // Return a value even though we've been canceled.
-        });
-
-        match Pin::new(&mut coro).resume() {
-            GeneratorState::Yielded(1) => {}
-            _ => panic!("unexpected return from resume"),
-        }
-
-        // Coroutine is cancelled when it goes out of scope.
-        // Even though the function returns a value, it shouldn't crash.
     }
 }
