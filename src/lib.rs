@@ -53,12 +53,17 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
     where
         F: FnOnce(Control<Y, R>) -> Result<R, Cancelled>,
     {
+        const STACK_ALIGNMENT: usize = 16;
+
         let mut ctx: Option<&mut Context<Y, R>> = None;
         let mut fnc: Option<&mut F> = None;
 
         unsafe {
+            let top = stack.as_mut_ptr().add(stack.len());
+            let top = top.sub(top.align_offset(STACK_ALIGNMENT));
+
             jump_init(
-                stack.as_mut_ptr().add(stack.len()), // Top of the stack.
+                top,
                 &mut ctx as *mut _ as _,
                 &mut fnc as *mut _ as _,
                 callback::<Y, R, F>,
