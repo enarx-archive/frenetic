@@ -151,3 +151,93 @@ impl<'a, Y, R> Drop for Coroutine<'a, Y, R> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stack() {
+        let mut stack = [0u8; 4096 * 8];
+
+        let mut coro = Coroutine::new(&mut stack, |c| {
+            c.pause(1)?;
+            Ok("foo")
+        });
+
+        match Pin::new(&mut coro).resume() {
+            GeneratorState::Yielded(1) => {}
+            _ => panic!("unexpected return from resume"),
+        }
+
+        match Pin::new(&mut coro).resume() {
+            GeneratorState::Complete("foo") => {}
+            _ => panic!("unexpected return from resume"),
+        }
+    }
+
+    #[test]
+    fn heap() {
+        let mut stack = Box::new([0u8; 4096 * 8]);
+
+        let mut coro = Coroutine::new(&mut *stack, |c| {
+            c.pause(1)?;
+            Ok("foo")
+        });
+
+        match Pin::new(&mut coro).resume() {
+            GeneratorState::Yielded(1) => {}
+            _ => panic!("unexpected return from resume"),
+        }
+
+        match Pin::new(&mut coro).resume() {
+            GeneratorState::Complete("foo") => {}
+            _ => panic!("unexpected return from resume"),
+        }
+    }
+
+    #[test]
+    fn cancel() {
+        let mut cancelled = false;
+
+        {
+            let mut stack = [0u8; 4096 * 8];
+
+            let mut coro = Coroutine::new(&mut stack, |c| {
+                if let Err(v) = c.pause(1) {
+                    cancelled = true;
+                    return Err(v);
+                }
+
+                Ok("foo")
+            });
+
+            match Pin::new(&mut coro).resume() {
+                GeneratorState::Yielded(1) => {}
+                _ => panic!("unexpected return from resume"),
+            }
+
+            // Coroutine is cancelled when it goes out of scope.
+        }
+
+        assert!(cancelled);
+    }
+
+    #[test]
+    fn invalid() {
+        let mut stack = [0u8; 4096 * 8];
+
+        let mut coro = Coroutine::new(&mut stack, |c| {
+            if let Err(_) = c.pause(1) {} // Swallow the cancellation error.
+            Ok("foo") // Return a value even though we've been canceled.
+        });
+
+        match Pin::new(&mut coro).resume() {
+            GeneratorState::Yielded(1) => {}
+            _ => panic!("unexpected return from resume"),
+        }
+
+        // Coroutine is cancelled when it goes out of scope.
+        // Even though the function returns a value, it shouldn't crash.
+    }
+}
