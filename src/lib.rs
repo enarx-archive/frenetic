@@ -36,9 +36,7 @@ pub use core::ops::{Generator, GeneratorState};
 pub trait Generator {
     type Yield;
     type Return;
-    fn resume(
-        self: Pin<&mut Self>,
-    ) -> GeneratorState<Self::Yield, Self::Return>;
+    fn resume(self: Pin<&mut Self>) -> GeneratorState<Self::Yield, Self::Return>;
 }
 
 #[cfg(not(has_generator_trait))]
@@ -52,11 +50,7 @@ pub struct Canceled(());
 
 pub struct Coroutine<'a, Y, R>(Option<&'a mut Context<Y, R>>);
 
-unsafe extern "C" fn callback<Y, R, F>(
-    p: *mut *mut c_void,
-    c: *mut c_void,
-    f: *mut c_void,
-) -> !
+unsafe extern "C" fn callback<Y, R, F>(p: *mut *mut c_void, c: *mut c_void, f: *mut c_void) -> !
 where
     F: FnOnce(Control<Y, R>) -> Result<Finished<R>, Canceled>,
 {
@@ -191,7 +185,9 @@ impl<'a, Y, R> Drop for Coroutine<'a, Y, R> {
         // If we are still able to resume the coroutine, do so. Since we don't
         // set the argument pointer, `Control::halt()` will return `Canceled`.
         if let Some(ref mut x) = self.0 {
-            unsafe { jump_swap(x.parent.as_mut_ptr(), x.child.as_mut_ptr()); }
+            unsafe {
+                jump_swap(x.parent.as_mut_ptr(), x.child.as_mut_ptr());
+            }
             self.0 = None;
         }
     }
@@ -248,13 +244,11 @@ mod tests {
         {
             let mut stack = [0u8; 4096 * 8];
 
-            let mut coro = Coroutine::new(&mut stack, |c| {
-                match c.halt(1) {
-                    Ok(c) => c.done("foo"),
-                    Err(v) => {
-                        cancelled = true;
-                        Err(v)
-                    },
+            let mut coro = Coroutine::new(&mut stack, |c| match c.halt(1) {
+                Ok(c) => c.done("foo"),
+                Err(v) => {
+                    cancelled = true;
+                    Err(v)
                 }
             });
 

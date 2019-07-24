@@ -19,9 +19,9 @@ fn main() {
 
 /// Test if a code snippet can be compiled
 fn probe(code: &str) -> bool {
-    use std::process::{Command, Stdio};
-    use std::io::Write;
     use std::env;
+    use std::io::Write;
+    use std::process::{Command, Stdio};
 
     let rustc = env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
     let out_dir = env::var_os("OUT_DIR").expect("environment variable OUT_DIR");
