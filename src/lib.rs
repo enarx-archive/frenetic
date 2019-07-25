@@ -1,3 +1,32 @@
+//! Frenetic is an implementation of stackful coroutines. It is written in Rust
+//! and LLVM. Notably, this approach does not require any system calls or hand-
+//! crafted assembly at all.
+//!
+//! # Example usage
+//! ```
+//! use frenetic::{Coroutine, Generator, GeneratorState};
+//! use core::pin::Pin;
+//!
+//! // You'll need to create a stack before using Frenetic coroutines.
+//! let mut stack = [0u8; 4096 * 8];
+//!
+//! // Then, you can initialize with `Coroutine::new`.
+//! let mut coro = Coroutine::new(&mut stack, |c| {
+//!     let c = c.r#yield(1)?; // Yield an integer value.
+//!     c.done("foo") // Return a string value.
+//! });
+//!
+//! // You can also interact with the yielded and returned values.
+//! match Pin::new(&mut coro).resume() {
+//!     GeneratorState::Yielded(1) => {}
+//!     _ => panic!("unexpected return from resume"),
+//! }
+//! match Pin::new(&mut coro).resume() {
+//!     GeneratorState::Complete("foo") => {}
+//!     _ => panic!("unexpected return from resume"),
+//! }
+//! ```
+
 #![cfg_attr(has_generator_trait, feature(generator_trait))]
 #![deny(
     warnings,
@@ -157,6 +186,19 @@ where
 }
 
 impl<'a, Y, R> Coroutine<'a, Y, R> {
+    /// Spawns a new coroutine.
+    ///
+    /// This sets up the stack, and executes the closure within that stack.
+    ///
+    /// # Arguments
+    ///
+    /// * `stack` - A stack for this coroutine to use.
+    /// This must be larger than `STACK_MINIMUM`, currently 4096, or Frenetic
+    /// will panic.
+    /// NOTE: It is up to the caller to properly allocate this stack. We
+    /// recommend the stack include a guard page.
+    ///
+    /// * `func` - The closure to be executed as part of the coroutine.
     pub fn new<F>(stack: &'a mut [u8], func: F) -> Self
     where
         F: FnOnce(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
@@ -195,6 +237,14 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
 pub struct Control<'a, Y, R>(&'a mut Context<Y, R>);
 
 impl<'a, Y, R> Control<'a, Y, R> {
+    /// Pauses execution of this coroutine, saves function position, and passes
+    /// control back to parent.
+    /// Returns a `Canceled` error if the parent has been dropped.
+    ///
+    /// # Arguments
+    ///
+    /// * `arg` - Passed on to the argument variable for the generator, if it
+    /// exists.
     pub fn r#yield(self, arg: Y) -> Result<Self, Canceled> {
         unsafe {
             // The parent `Coroutine` object has been dropped. Resume the child
@@ -220,6 +270,7 @@ impl<'a, Y, R> Control<'a, Y, R> {
         Ok(self)
     }
 
+    /// Finishes execution of this coroutine.
     pub fn done<E>(self, arg: R) -> Result<Finished<R>, E> {
         Ok(Finished(arg))
     }
@@ -229,6 +280,8 @@ impl<'a, Y, R> Generator for Coroutine<'a, Y, R> {
     type Yield = Y;
     type Return = R;
 
+    /// Resumes a paused coroutine.
+    /// Re-initialize stack and continue execution where it was left off.
     fn resume(mut self: Pin<&mut Self>) -> GeneratorState<Y, R> {
         // Allocate an argument variable on the stack. See `Control::r#yield()` and
         // `callback()` for where this is initialized.
