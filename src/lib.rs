@@ -1,4 +1,23 @@
 #![cfg_attr(has_generator_trait, feature(generator_trait))]
+#![deny(
+    warnings,
+    absolute_paths_not_starting_with_crate,
+    deprecated_in_future,
+    keyword_idents,
+    macro_use_extern_crate,
+    trivial_numeric_casts,
+    unused_extern_crates,
+    unused_import_braces,
+    unused_qualifications,
+    unused_results,
+    unused_labels,
+    unused_lifetimes,
+    unreachable_pub,
+    future_incompatible,
+    missing_doc_code_examples,
+    rust_2018_idioms,
+    rust_2018_compatibility
+)]
 
 use core::ffi::c_void;
 use core::mem::MaybeUninit;
@@ -104,7 +123,7 @@ pub struct Coroutine<'a, Y, R>(Option<&'a mut Context<Y, R>>);
 
 unsafe extern "C" fn callback<Y, R, F>(p: *mut *mut c_void, c: *mut c_void, f: *mut c_void) -> !
 where
-    F: FnOnce(Control<Y, R>) -> Result<Finished<R>, Canceled>,
+    F: FnOnce(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
 {
     // Allocate a Context and a closure.
     let mut ctx = MaybeUninit::uninit().assume_init();
@@ -112,7 +131,7 @@ where
 
     // Cast the incoming pointers to their correct types.
     // See `Coroutine::new()`.
-    let c = c as *mut Coroutine<Y, R>;
+    let c = c as *mut Coroutine<'_, Y, R>;
     let f = f as *mut &mut F;
 
     // Pass references to the stack-allocated Context and closure back into
@@ -138,7 +157,7 @@ where
 impl<'a, Y, R> Coroutine<'a, Y, R> {
     pub fn new<F>(stack: &'a mut [u8], func: F) -> Self
     where
-        F: FnOnce(Control<Y, R>) -> Result<Finished<R>, Canceled>,
+        F: FnOnce(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
     {
         // These variables are going to receive output from the callback
         // function above. Specifically, the callback function is going to
