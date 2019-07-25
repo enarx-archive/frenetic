@@ -1,4 +1,23 @@
 #![cfg_attr(has_generator_trait, feature(generator_trait))]
+#![deny(
+    warnings,
+    absolute_paths_not_starting_with_crate,
+    deprecated_in_future,
+    keyword_idents,
+    macro_use_extern_crate,
+    trivial_numeric_casts,
+    unused_extern_crates,
+    unused_import_braces,
+    unused_qualifications,
+    unused_results,
+    unused_labels,
+    unused_lifetimes,
+    unreachable_pub,
+    future_incompatible,
+    missing_doc_code_examples,
+    rust_2018_idioms,
+    rust_2018_compatibility
+)]
 
 use core::ffi::c_void;
 use core::mem::MaybeUninit;
@@ -34,14 +53,66 @@ pub use core::ops::{Generator, GeneratorState};
 
 #[cfg(not(has_generator_trait))]
 pub trait Generator {
+    /// The type of value this generator yields.
+    ///
+    /// This associated type corresponds to the `yield` expression and the
+    /// values which are allowed to be returned each time a generator yields.
+    /// For example an iterator-as-a-generator would likely have this type as
+    /// `T`, the type being iterated over.
     type Yield;
+
+    /// The type of value this generator returns.
+    ///
+    /// This corresponds to the type returned from a generator either with a
+    /// `return` statement or implicitly as the last expression of a generator
+    /// literal. For example futures would use this as `Result<T, E>` as it
+    /// represents a completed future.
     type Return;
+
+    /// Resumes the execution of this generator.
+    ///
+    /// This function will resume execution of the generator or start execution
+    /// if it hasn't already. This call will return back into the generator's
+    /// last suspension point, resuming execution from the latest `yield`. The
+    /// generator will continue executing until it either yields or returns, at
+    /// which point this function will return.
+    ///
+    /// # Return value
+    ///
+    /// The `GeneratorState` enum returned from this function indicates what
+    /// state the generator is in upon returning. If the `Yielded` variant is
+    /// returned then the generator has reached a suspension point and a value
+    /// has been yielded out. Generators in this state are available for
+    /// resumption at a later point.
+    ///
+    /// If `Complete` is returned then the generator has completely finished
+    /// with the value provided. It is invalid for the generator to be resumed
+    /// again.
+    ///
+    /// # Panics
+    ///
+    /// This function may panic if it is called after the `Complete` variant has
+    /// been returned previously. While generator literals in the language are
+    /// guaranteed to panic on resuming after `Complete`, this is not guaranteed
+    /// for all implementations of the `Generator` trait.
     fn resume(self: Pin<&mut Self>) -> GeneratorState<Self::Yield, Self::Return>;
 }
 
 #[cfg(not(has_generator_trait))]
 pub enum GeneratorState<Y, R> {
+    /// The generator suspended with a value.
+    ///
+    /// This state indicates that a generator has been suspended, and typically
+    /// corresponds to a `yield` statement. The value provided in this variant
+    /// corresponds to the expression passed to `yield` and allows generators to
+    /// provide a value each time they yield.
     Yielded(Y),
+
+    /// The generator completed with a return value.
+    ///
+    /// This state indicates that a generator has finished execution with the
+    /// provided value. Once a generator has returned `Complete` it is
+    /// considered a programmer error to call `resume` again.
     Complete(R),
 }
 
@@ -52,7 +123,7 @@ pub struct Coroutine<'a, Y, R>(Option<&'a mut Context<Y, R>>);
 
 unsafe extern "C" fn callback<Y, R, F>(p: *mut *mut c_void, c: *mut c_void, f: *mut c_void) -> !
 where
-    F: FnOnce(Control<Y, R>) -> Result<Finished<R>, Canceled>,
+    F: FnOnce(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
 {
     // Allocate a Context and a closure.
     let mut ctx = MaybeUninit::uninit().assume_init();
@@ -60,7 +131,7 @@ where
 
     // Cast the incoming pointers to their correct types.
     // See `Coroutine::new()`.
-    let c = c as *mut Coroutine<Y, R>;
+    let c = c as *mut Coroutine<'_, Y, R>;
     let f = f as *mut &mut F;
 
     // Pass references to the stack-allocated Context and closure back into
@@ -86,7 +157,7 @@ where
 impl<'a, Y, R> Coroutine<'a, Y, R> {
     pub fn new<F>(stack: &'a mut [u8], func: F) -> Self
     where
-        F: FnOnce(Control<Y, R>) -> Result<Finished<R>, Canceled>,
+        F: FnOnce(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
     {
         // These variables are going to receive output from the callback
         // function above. Specifically, the callback function is going to
@@ -151,7 +222,8 @@ impl<'a, Y, R> Generator for Coroutine<'a, Y, R> {
     type Return = R;
 
     fn resume(mut self: Pin<&mut Self>) -> GeneratorState<Y, R> {
-        // Allocate an arguent variable on the stack. See `Control::r#yield()` and
+
+        // Allocate an argument variable on the stack. See `Control::r#yield()` and
         // `callback()` for where this is initialized.
         let mut arg = unsafe { MaybeUninit::uninit().assume_init() };
 
@@ -184,11 +256,10 @@ impl<'a, Y, R> Drop for Coroutine<'a, Y, R> {
     fn drop(&mut self) {
         // If we are still able to resume the coroutine, do so. Since we don't
         // set the argument pointer, `Control::halt()` will return `Canceled`.
-        if let Some(ref mut x) = self.0 {
+        if let Some(x) = self.0.take() {
             unsafe {
                 jump_swap(x.parent.as_mut_ptr(), x.child.as_mut_ptr());
             }
-            self.0 = None;
         }
     }
 }
