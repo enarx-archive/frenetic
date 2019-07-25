@@ -184,11 +184,10 @@ impl<'a, Y, R> Drop for Coroutine<'a, Y, R> {
     fn drop(&mut self) {
         // If we are still able to resume the coroutine, do so. Since we don't
         // set the argument pointer, `Control::halt()` will return `Canceled`.
-        if let Some(ref mut x) = self.0 {
+        if let Some(x) = self.0.take() {
             unsafe {
                 jump_swap(x.parent.as_mut_ptr(), x.child.as_mut_ptr());
             }
-            self.0 = None;
         }
     }
 }
