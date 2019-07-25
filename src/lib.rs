@@ -122,7 +122,7 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
 pub struct Control<'a, Y, R>(&'a mut Context<Y, R>);
 
 impl<'a, Y, R> Control<'a, Y, R> {
-    pub fn halt(self, arg: Y) -> Result<Self, Canceled> {
+    pub fn r#yield(self, arg: Y) -> Result<Self, Canceled> {
         unsafe {
             // Move the argument value into the argument variable in
             // `Generator::resume()`.
@@ -151,7 +151,7 @@ impl<'a, Y, R> Generator for Coroutine<'a, Y, R> {
     type Return = R;
 
     fn resume(mut self: Pin<&mut Self>) -> GeneratorState<Y, R> {
-        // Allocate an arguent variable on the stack. See `Control::halt()` and
+        // Allocate an arguent variable on the stack. See `Control::r#yield()` and
         // `callback()` for where this is initialized.
         let mut arg = unsafe { MaybeUninit::uninit().assume_init() };
 
@@ -202,7 +202,7 @@ mod tests {
         let mut stack = [0u8; 4096 * 8];
 
         let mut coro = Coroutine::new(&mut stack, |c| {
-            let c = c.halt(1)?;
+            let c = c.r#yield(1)?;
             c.done("foo")
         });
 
@@ -222,7 +222,7 @@ mod tests {
         let mut stack = Box::new([0u8; 4096 * 8]);
 
         let mut coro = Coroutine::new(&mut *stack, |c| {
-            let c = c.halt(1)?;
+            let c = c.r#yield(1)?;
             c.done("foo")
         });
 
@@ -244,7 +244,7 @@ mod tests {
         {
             let mut stack = [0u8; 4096 * 8];
 
-            let mut coro = Coroutine::new(&mut stack, |c| match c.halt(1) {
+            let mut coro = Coroutine::new(&mut stack, |c| match c.r#yield(1) {
                 Ok(c) => c.done("foo"),
                 Err(v) => {
                     cancelled = true;
