@@ -21,6 +21,8 @@
 
 use core::ffi::c_void;
 use core::mem::MaybeUninit;
+#[cfg(has_generator_trait)]
+pub use core::ops::{Generator, GeneratorState};
 use core::pin::Pin;
 use core::ptr::null_mut;
 
@@ -47,9 +49,6 @@ struct Context<Y, R> {
     child: [*mut c_void; 5],
     arg: *mut GeneratorState<Y, R>,
 }
-
-#[cfg(has_generator_trait)]
-pub use core::ops::{Generator, GeneratorState};
 
 #[cfg(not(has_generator_trait))]
 pub trait Generator {
@@ -117,6 +116,7 @@ pub enum GeneratorState<Y, R> {
 }
 
 pub struct Finished<R>(R);
+
 pub struct Canceled(());
 
 pub struct Coroutine<'a, Y, R>(Option<&'a mut Context<Y, R>>);
@@ -126,7 +126,7 @@ where
     F: FnOnce(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
 {
     // Allocate a Context and a closure.
-    let mut ctx = MaybeUninit::uninit().assume_init();
+    let mut ctx = MaybeUninit::zeroed().assume_init();
     let mut fnc = MaybeUninit::uninit().assume_init();
 
     // Cast the incoming pointers to their correct types.
@@ -147,7 +147,9 @@ where
     // Call the closure. If the closure returns, then move the return value
     // into the argument variable in `Generator::resume()`.
     if let Ok(r) = fnc(Control(&mut ctx)) {
-        *ctx.arg = GeneratorState::Complete(r.0);
+        if !ctx.arg.is_null() {
+            *ctx.arg = GeneratorState::Complete(r.0);
+        }
     }
 
     // We cannot be resumed, so jump away forever.
@@ -195,6 +197,12 @@ pub struct Control<'a, Y, R>(&'a mut Context<Y, R>);
 impl<'a, Y, R> Control<'a, Y, R> {
     pub fn r#yield(self, arg: Y) -> Result<Self, Canceled> {
         unsafe {
+            // The parent `Coroutine` object has been dropped. Resume the child
+            // coroutine with the Canceled error. It must clean up and exit.
+            if self.0.arg.is_null() {
+                return Err(Canceled(()));
+            }
+
             // Move the argument value into the argument variable in
             // `Generator::resume()`.
             *self.0.arg = GeneratorState::Yielded(arg);
@@ -269,7 +277,7 @@ mod tests {
 
     #[test]
     fn stack() {
-        let mut stack = [0u8; 4096 * 8];
+        let mut stack = [1u8; 4096 * 8];
 
         let mut coro = Coroutine::new(&mut stack, |c| {
             let c = c.r#yield(1)?;
@@ -289,7 +297,7 @@ mod tests {
 
     #[test]
     fn heap() {
-        let mut stack = Box::new([0u8; 4096 * 8]);
+        let mut stack = Box::new([1u8; 4096 * 8]);
 
         let mut coro = Coroutine::new(&mut *stack, |c| {
             let c = c.r#yield(1)?;
@@ -312,7 +320,7 @@ mod tests {
         let mut cancelled = false;
 
         {
-            let mut stack = [0u8; 4096 * 8];
+            let mut stack = [1u8; 4096 * 8];
 
             let mut coro = Coroutine::new(&mut stack, |c| match c.r#yield(1) {
                 Ok(c) => c.done("foo"),
@@ -331,5 +339,36 @@ mod tests {
         }
 
         assert!(cancelled);
+    }
+
+    #[test]
+    fn coro_early_drop_yield_done() {
+        let mut stack = [1u8; 4096 * 8];
+
+        let _coro = Coroutine::new(&mut stack, |c| {
+            let c = c.r#yield(1)?;
+            c.done("foo")
+        });
+    }
+
+    #[test]
+    fn coro_early_drop_done_only() {
+        let mut stack = [1u8; 4096 * 8];
+
+        let _coro = Coroutine::new(&mut stack, |c: Control<'_, i32, &str>| c.done("foo"));
+    }
+
+    #[test]
+    fn coro_early_drop_result_ok() {
+        let mut stack = [1u8; 4096 * 8];
+
+        let _coro = Coroutine::new(&mut stack, |_c: Control<'_, i32, &str>| Ok(Finished("foo")));
+    }
+
+    #[test]
+    fn coro_early_drop_result_err() {
+        let mut stack = [1u8; 4096 * 8];
+
+        let _coro = Coroutine::new(&mut stack, |_c: Control<'_, i32, &str>| Err(Canceled(())));
     }
 }
