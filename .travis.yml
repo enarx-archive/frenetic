@@ -1,4 +1,6 @@
+services: docker
 language: rust
+dist: bionic
 
 rust:
   - 1.36.0
@@ -6,15 +8,43 @@ rust:
   - beta
   - nightly
 
+env:
+  matrix:
+    - ARCH=ppc64le
+    - ARCH=arm64v8
+    - ARCH=arm32v7
+    - ARCH=amd64
+    - ARCH=i386
+    - ARCH=s390x
+
 matrix:
+  fast_finish: true
   allow_failures:
     - rust: nightly
-  fast_finish: true
+    - env: ARCH=ppc64le
+    - env: ARCH=arm64v8
+    - env: ARCH=arm32v7
+    - env: ARCH=s390x
 
-before_script:
-- rustup component add rustfmt
+before_install:
+  - docker run -it --rm --privileged npmccallum/qemu-register
+
+install:
+  - |
+    docker build -t $TRAVIS_COMMIT - <<EOF
+    FROM $ARCH/debian:latest
+
+    ENV X "/root/.cargo/bin"
+
+    RUN apt-get update
+    RUN apt-get install -y wget clang build-essential
+    RUN apt-get install -y gcc-multilib || true
+    RUN wget -qO- https://sh.rustup.rs | sh -s -- -y --default-toolchain $TRAVIS_RUST_VERSION
+    RUN \$X/rustup component add rustfmt || ln -sf /bin/true \$X/cargo-fmt
+
+    VOLUME /tmp/build
+    WORKDIR /tmp/build
+    CMD \$X/cargo build --verbose && \$X/cargo test --verbose && \$X/cargo fmt -- --check
 
 script:
-- cargo build --verbose
-- cargo test --verbose
-- cargo fmt -- --check
+  - docker run -it --rm -v `pwd`:/tmp/build $TRAVIS_COMMIT
