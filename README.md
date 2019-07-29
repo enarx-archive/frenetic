@@ -12,7 +12,7 @@ calls or hand-crafted assembly at all.
 
 ## Examples
 
-```
+```rust
 use frenetic::{Coroutine, Generator, GeneratorState};
 use core::pin::Pin;
 
