@@ -1,0 +1,19 @@
+name: Enarx Standard Tests
+# Automated testing common to all Enarx repositories.
+
+on: [pull_request]
+
+jobs:
+  commits:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@master
+      with:
+        ref: ${{ github.head_ref }}
+    # Ensure pull requests do not contain merge commits.
+    - name: No merge commits
+      # Merge commits have two parent commits. This command iterates through
+      # all commits added by the PR (everything since the base ref) and fails
+      # if it finds multiple parents. If all commits only have one, it exits 
+      # successfully.
+      run: git rev-list origin/${{ github.base_ref }}.. | xargs -n1 -I{} sh -c '! git rev-parse {}^2'

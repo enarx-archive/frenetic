@@ -1,0 +1,25 @@
+name: Enarx Rust Tests
+# Automated testing specific to Enarx's Rust repositories.
+
+on: [pull_request]
+
+jobs:
+  # Ensure all code is properly formatted with `rustfmt`.
+  rust-formatting:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: rustfmt
+      run: cargo fmt -- --check
+  
+  # Build and test the crate.
+  rust-build-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    # Ensure the project builds correctly.
+    - name: Build
+      run: cargo build --verbose
+    # Run any specified Rust tests.
+    - name: Run tests
+      run: cargo test --verbose
