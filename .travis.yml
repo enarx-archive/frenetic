@@ -59,6 +59,8 @@ install:
     VOLUME /tmp/build
     WORKDIR /tmp/build
     CMD \$X/cargo build --verbose && \$X/cargo test --verbose && \$X/cargo fmt -- --check
+  - rustup component add rustfmt
 
 script:
+  - cargo fmt -- --check
   - docker run -it --rm -v `pwd`:/tmp/build $TRAVIS_COMMIT
