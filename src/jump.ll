@@ -73,8 +73,24 @@ nounwind
   br i1 %zero, label %next, label %done
 
 next:                                         ; setjmp(%buff) returned 0
+
+  ; FIXME, the correct solution would be to store those in real registers
+
+  %1 = alloca i8*, align 4
+  %2 = alloca i8*, align 4
+  %3 = alloca void ([5 x i8*]*, i8*, i8*)*, align 4
+
+  store i8* %c, i8** %1
+  store i8* %f, i8** %2
+  store void ([5 x i8*]*, i8*, i8*)* %func, void ([5 x i8*]*, i8*, i8*)** %3
+
   call void @llvm.stackrestore(i8* %addr)     ; Move onto new stack %addr
-  call void %func([5 x i8*]* %buff, i8* %c, i8* %f) ; Call %func(%buff, %c, %f)
+
+  %gc = load i8*, i8** %1
+  %gf = load i8*, i8** %2
+  %gfunc = load void ([5 x i8*]*, i8*, i8*)*, void ([5 x i8*]*, i8*, i8*)** %3
+
+  call void %gfunc([5 x i8*]* %buff, i8* %gc, i8* %gf) ; Call %func(%buff, %c, %f)
   unreachable
 
 done:                                         ; setjmp(%buff) returned !0
