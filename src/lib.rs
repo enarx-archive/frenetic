@@ -19,11 +19,11 @@
 //! # Example usage
 //! ```
 //! # #![cfg_attr(has_generator_trait, feature(generator_trait))]
-//! use frenetic::{Coroutine, Generator, GeneratorState};
+//! use frenetic::{Coroutine, Generator, GeneratorState, STACK_MINIMUM};
 //! use core::pin::Pin;
 //!
 //! // You'll need to create a stack before using Frenetic coroutines.
-//! let mut stack = [0u8; 4096 * 8];
+//! let mut stack = [0u8; STACK_MINIMUM * 8];
 //!
 //! // Then, you can initialize with `Coroutine::new`.
 //! let mut coro = Coroutine::new(&mut stack, |c| {
@@ -70,8 +70,8 @@ pub use core::ops::{Generator, GeneratorState};
 use core::pin::Pin;
 use core::ptr::null_mut;
 
-const STACK_ALIGNMENT: usize = 16;
-const STACK_MINIMUM: usize = 4096;
+pub const STACK_ALIGNMENT: usize = 16;
+pub const STACK_MINIMUM: usize = 4096;
 
 extern "C" {
     fn jump_into(into: *mut *mut c_void) -> !;
@@ -345,7 +345,7 @@ mod tests {
 
     #[test]
     fn stack() {
-        let mut stack = [1u8; 4096 * 8];
+        let mut stack = [1u8; STACK_MINIMUM];
 
         let mut coro = Coroutine::new(&mut stack, |c| {
             let c = c.r#yield(1)?;
@@ -365,7 +365,7 @@ mod tests {
 
     #[test]
     fn heap() {
-        let mut stack = Box::new([1u8; 4096 * 8]);
+        let mut stack = Box::new([1u8; STACK_MINIMUM]);
 
         let mut coro = Coroutine::new(&mut *stack, |c| {
             let c = c.r#yield(1)?;
@@ -388,7 +388,7 @@ mod tests {
         let mut cancelled = false;
 
         {
-            let mut stack = [1u8; 4096 * 8];
+            let mut stack = [1u8; STACK_MINIMUM];
 
             let mut coro = Coroutine::new(&mut stack, |c| match c.r#yield(1) {
                 Ok(c) => c.done("foo"),
@@ -411,7 +411,7 @@ mod tests {
 
     #[test]
     fn coro_early_drop_yield_done() {
-        let mut stack = [1u8; 4096 * 8];
+        let mut stack = [1u8; STACK_MINIMUM];
 
         let _coro = Coroutine::new(&mut stack, |c| {
             let c = c.r#yield(1)?;
@@ -421,22 +421,29 @@ mod tests {
 
     #[test]
     fn coro_early_drop_done_only() {
-        let mut stack = [1u8; 4096 * 8];
+        let mut stack = [1u8; STACK_MINIMUM];
 
         let _coro = Coroutine::new(&mut stack, |c: Control<'_, i32, &str>| c.done("foo"));
     }
 
     #[test]
     fn coro_early_drop_result_ok() {
-        let mut stack = [1u8; 4096 * 8];
+        let mut stack = [1u8; STACK_MINIMUM];
 
         let _coro = Coroutine::new(&mut stack, |_c: Control<'_, i32, &str>| Ok(Finished("foo")));
     }
 
     #[test]
     fn coro_early_drop_result_err() {
-        let mut stack = [1u8; 4096 * 8];
+        let mut stack = [1u8; STACK_MINIMUM];
 
+        let _coro = Coroutine::new(&mut stack, |_c: Control<'_, i32, &str>| Err(Canceled(())));
+    }
+
+    #[test]
+    #[should_panic(expected = "stack.len() >= STACK_MINIMUM")]
+    fn small_stack() {
+        let mut stack = [1u8; STACK_MINIMUM - 1];
         let _coro = Coroutine::new(&mut stack, |_c: Control<'_, i32, &str>| Err(Canceled(())));
     }
 }
