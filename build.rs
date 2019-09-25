@@ -29,6 +29,20 @@ fn main() {
     if probe("#![feature(generator_trait)] fn main() {}") {
         println!("cargo:rustc-cfg=has_generator_trait");
     }
+
+    if probe(
+        r#"
+    extern "C" {
+        fn stk_grows_up(c: *mut c_void) -> bool;
+    }
+    fn main() {
+        let mut test_ptr = true;
+        assert!(stk_grows_up(&mut test_ptr as *mut _ as _));
+    }
+    "#,
+    ) {
+        println!("cargo:rustc-cfg=stk_grows_up");
+    }
 }
 
 /// Test if a code snippet can be compiled
