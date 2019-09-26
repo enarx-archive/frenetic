@@ -248,8 +248,14 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
 
         unsafe {
             // Calculate the aligned top of the stack.
-            let top = stack.as_mut_ptr().add(stack.len());
-            let top = top.sub(top.align_offset(STACK_ALIGNMENT));
+            let top = stack.as_mut_ptr().add(stack.len() - 1);
+            // If the top isn't aligned yet, calculate the aligned top of the stack.
+            let top = if top.align_offset(STACK_ALIGNMENT) != 0 {
+                let top = top.sub(STACK_ALIGNMENT);
+                top.add(top.align_offset(STACK_ALIGNMENT))
+            } else {
+                top
+            };
 
             // Call into the callback on the specified stack.
             jump_init(
