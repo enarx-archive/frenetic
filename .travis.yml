@@ -60,7 +60,10 @@ install:
     WORKDIR /tmp/build
     CMD \$X/cargo build --verbose && \$X/cargo test --verbose && \$X/cargo fmt -- --check
   - rustup component add rustfmt
+  - cargo install --force cargo-audit
+  - cargo generate-lockfile
 
 script:
   - cargo fmt -- --check
+  - cargo audit
   - docker run -it --rm -v `pwd`:/tmp/build $TRAVIS_COMMIT
